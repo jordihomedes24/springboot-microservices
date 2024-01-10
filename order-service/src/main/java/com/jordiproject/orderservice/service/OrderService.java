@@ -1,5 +1,6 @@
 package com.jordiproject.orderservice.service;
 
+import com.jordiproject.orderservice.dto.InventoryResponse;
 import com.jordiproject.orderservice.dto.OrderLineItemDto;
 import com.jordiproject.orderservice.dto.OrderRequest;
 import com.jordiproject.orderservice.model.Order;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -31,19 +33,23 @@ public class OrderService {
 
         order.setOrderLineItemsList(orderLineItems);
 
+        List<String> skuCodes = orderLineItems.stream().map(OrderLineItem::getSkuCode).toList();
+
         //We call inventory Service to see if products are on stock (we use Synchronous communication)
-        Boolean result = webClient.get()
-                        .uri("http://localhost:8082/api/inventory")
+        InventoryResponse[] inventoryResponsesArray = webClient.get()
+                        .uri("http://localhost:8082/api/inventory",
+                                uriBuilder -> uriBuilder.queryParam("skuCode", skuCodes).build())
                         .retrieve()
-                        .bodyToMono(Boolean.class)
+                        .bodyToMono(InventoryResponse[].class)
                         .block();
 
-        if (Boolean.TRUE.equals(result)) {
+        boolean allProductsInStock = Arrays.stream(inventoryResponsesArray).allMatch(InventoryResponse::isInStock);
+
+        if (allProductsInStock) {
             orderRepository.save(order);
         } else {
-            throw new IllegalArgumentException("Product is not in stock");
+            throw new IllegalArgumentException("Any product is not in stock");
         }
-
     }
 
     private OrderLineItem mapDto(OrderLineItemDto orderLineItemDto) {
